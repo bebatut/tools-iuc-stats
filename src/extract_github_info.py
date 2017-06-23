@@ -24,17 +24,14 @@ def format_date(date):
     '''
     Format date to put it at the correct year (going from 1st of July)
     '''
-    print(date)
     year_date = date
     year_date = year_date.replace(month = 7)
     year_date = year_date.replace(day = 1)
     year_date = year_date.replace(hour = 0)
     year_date = year_date.replace(minute = 0)
     year_date = year_date.replace(second = 1)
-    if year_date.month < 7:
+    if date.month < 7:
         year_date = year_date.replace(year = (date.year) - 1)
-    print(year_date)
-    print()
     return year_date
 
 
@@ -140,14 +137,22 @@ rule extract_contributor_avatar:
         result.save(str(output.contributors))
 
 
+def format_date_string(date):
+    '''
+    Format date to a string
+    '''
+    s = "%s/%s - %s/%s" % (date.month, date.year, date.month-1, date.year+1)
+    return s
+
+
 rule extract_contribution_number:
     '''
-    Extract the number of contributions (commits, PR and issues) over the months
+    Extract the number of contributions (commits, PR and issues) over the years
     '''
     output:
         contribution_tab = "data/contributions.csv"
     run:
-        # extract the contributions per months
+        # extract the contributions per year
         df = pd.DataFrame(
             0,
             columns=["commit_nb","pull_request", "issue"],
@@ -167,6 +172,8 @@ rule extract_contribution_number:
                 continue
             date = format_date(issue.created_at)
             df.iloc[df.index.get_loc(date, method='nearest')].issue += 1
+        # format the date
+        df.index = df.index.map(format_date_string)
         # export to file
         df.to_csv(
             str(output.contribution_tab),
