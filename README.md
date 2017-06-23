@@ -9,7 +9,7 @@ Extraction of statistics from the tools-iuc GitHub repository
 - Create the conda environment:
 
     ```
-    $ conda create -f environment.yml -n tools-iuc-stats
+    $ conda create -f environment.yaml -n tools-iuc-stats
     ```
 
 ## Extraction of the GitHub statistics
