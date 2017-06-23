@@ -45,7 +45,8 @@ data_range = pd.date_range(
 rule all:
     input:
         contributors="images/contributors.png",
-        contributions_table = "data/contributions.csv"
+        contributions_tab = "data/contributions.csv",
+        changes_tab = "data/content_changes.csv"
 
 
 def extract_resizing_value(x, y, n):
@@ -178,4 +179,117 @@ rule extract_contribution_number:
         df.to_csv(
             str(output.contribution_tab),
             index = True)
+
+
+def extract_content_commit_info(content):
+    '''
+    Extract the date for the creation of the content and the change counts on 
+    this content
+    '''
+    df = pd.DataFrame(
+        0,
+        columns=["change_nb"],
+        index=data_range)
+    created_at = datetime.datetime.now()
+    # parse the commits on this path
+    for commit in repo.get_commits(path = content):
+        # extract the commit date
+        commit_date = commit.commit.author.date
+        # conserve as creation date if older
+        if commit_date < created_at:
+            created_at = commit_date
+        # format the date and add the changes
+        commit_date = format_date(commit_date)
+        df.iloc[df.index.get_loc(commit_date, method='nearest')].change_nb += 1
+    return df, format_date(created_at)
+
+
+def is_wrapper(content):
+    '''
+    Test if a "ContentFile" is a Galaxy wrapper
+    '''
+    if content.type != "file":
+        return False
+    elif not content.name.endswith("xml"):
+        return False
+    elif content.name.startswith("macros"):
+        return False
+    elif content.name.startswith("tool_dependencies"):
+        return False
+    elif content.name.startswith("repository_dependencies"):
+        return False
+    return True
+
+
+rule extract_change_content_information:
+    '''
+    Extract the number of tools/wrappers/data managers added and changed of 
+    the years
+    '''
+    output:
+        changes_tab = "data/content_changes.csv",
+        wrapper_list = "data/wrappers"
+    run:
+        # create an empty df for the counting
+        df = pd.DataFrame(
+            0,
+            columns=[
+                "tools_changed",
+                "tools_added",
+                "wrapper_changed",
+                "wrapper_added",
+                "data_manager_changed",
+                "data_manager_added",],
+            index=data_range)
+        # parse the tools directory in the github repository
+        wrapper_list = []
+        for content in repo.get_dir_contents("tools"):
+            # extract the content commit info
+            content_df, created_at = extract_content_commit_info(content.path)
+            # add the tool to the created ones
+            df.iloc[df.index.get_loc(created_at, method='nearest')].tools_added += 1
+            # add the changed info
+            df.tools_changed += 1*(content_df.change_nb > 0)
+            # parse the tools to 
+            for subcontent in repo.get_dir_contents(content.path):
+                if is_wrapper(subcontent):
+                    wrapper_list.append(subcontent.name)
+                    # extract the commit info
+                    content_df, created_at = extract_content_commit_info(
+                        subcontent.path)
+                    # add the tool to the created ones
+                    df.iloc[df.index.get_loc(created_at, method='nearest')].wrapper_added += 1
+                    # add the changed info
+                    df.wrapper_changed += 1*(content_df.change_nb > 0)
+                elif subcontent.type == "dir":
+                    if subcontent.name.startswith("tool-data"):
+                        continue
+                    if subcontent.name.startswith("test-data"):
+                        continue
+                    for subsubcontent in repo.get_dir_contents(subcontent.path):
+                        if is_wrapper(subsubcontent):
+                            wrapper_list.append(subsubcontent.name)
+                            # extract the commit info
+                            content_df, created_at = extract_content_commit_info(
+                                subcontent.path)
+                            # add the tool to the created ones
+                            df.iloc[df.index.get_loc(created_at, method='nearest')].wrapper_added += 1
+                            # add the changed info
+                            df.wrapper_changed += 1*(content_df.change_nb > 0)
+        # write the wrapper list in the file
+        with open(str(output.wrapper_list), "w") as f:
+            for w in wrapper_list:
+                f.write("%s\n" % w)
+        # parse the data managers
+        for content in repo.get_dir_contents("data_managers"):
+            # extract the content commit info
+            content_df, created_at = extract_content_commit_info(content.path)
+            # add the tool to the created ones
+            df.iloc[df.index.get_loc(created_at, method='nearest')].data_manager_added += 1
+            # add the changed info
+            df.data_manager_changed += 1*(content_df.change_nb > 0)
+        # format the date
+        df.index = df.index.map(format_date_string)
+        # export to file
+        df.to_csv(str(output.changes_tab), index = True)
 
